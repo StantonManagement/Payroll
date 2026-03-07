@@ -1,0 +1,76 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
+
+export type UserRole = 'admin' | 'manager' | 'bookkeeper'
+
+export interface AuthProfile {
+  id: string
+  email: string | null
+  full_name: string | null
+  role: UserRole
+  is_active: boolean
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null)
+  const [profile, setProfile] = useState<AuthProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+
+    const loadProfile = async (u: User) => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, is_active')
+        .eq('id', u.id)
+        .maybeSingle()
+      if (data) {
+        setProfile({
+          id: data.id,
+          email: data.email ?? u.email ?? null,
+          full_name: data.full_name,
+          role: (data.role as UserRole) ?? 'manager',
+          is_active: data.is_active ?? true,
+        })
+      } else {
+        setProfile({
+          id: u.id,
+          email: u.email ?? null,
+          full_name: u.user_metadata?.full_name ?? null,
+          role: 'manager',
+          is_active: true,
+        })
+      }
+    }
+
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      setUser(u)
+      if (u) loadProfile(u).finally(() => setLoading(false))
+      else setLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null
+      setUser(u)
+      if (u) loadProfile(u).catch(() => setLoading(false))
+      else { setProfile(null); setLoading(false) }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const signOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    window.location.href = '/payroll/login'
+  }
+
+  const isAdmin = profile?.role === 'admin'
+  const isManager = profile?.role === 'admin' || profile?.role === 'manager'
+
+  return { user, profile, loading, signOut, isAdmin, isManager }
+}

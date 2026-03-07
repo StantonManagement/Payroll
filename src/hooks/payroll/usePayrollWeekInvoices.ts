@@ -1,0 +1,167 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { PayrollWeek } from '@/lib/supabase/types'
+
+export interface PropertyCost {
+  property_id: string
+  property_code: string
+  property_name: string
+  total_units: number
+  labor_cost: number
+  spread_cost: number
+  mgmt_fee: number
+  total_cost: number
+  portfolio_id: string | null
+  billing_llc: string | null
+  portfolio_owner_llc: string | null
+}
+
+interface WeeklyPropertyCostRow {
+  payroll_week_id: string
+  property_id: string
+  labor_cost: number | null
+  spread_cost: number | null
+  total_cost: number
+  property: {
+    id: string
+    code: string
+    name: string
+    total_units: number | null
+    portfolio_id: string | null
+    billing_llc: string | null
+    portfolio: { owner_llc: string | null } | null
+  } | null
+}
+
+export function usePayrollWeekInvoices(weekId: string) {
+  const [week, setWeek] = useState<PayrollWeek | null>(null)
+  const [propertyCosts, setPropertyCosts] = useState<PropertyCost[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [approvingAll, setApprovingAll] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const supabase = createClient()
+    const [weekRes, costsRes] = await Promise.all([
+      supabase.from('payroll_weeks').select('*').eq('id', weekId).single(),
+      supabase.from('payroll_weekly_property_costs').select(`
+        payroll_week_id, property_id, labor_cost, spread_cost, total_cost,
+        property:properties(id, code, name, total_units, portfolio_id, billing_llc, portfolio:portfolios(owner_llc))
+      `).eq('payroll_week_id', weekId),
+    ])
+    if (weekRes.error) { setError(weekRes.error.message); setLoading(false); return }
+    setWeek(weekRes.data)
+
+    const costs: PropertyCost[] = []
+    for (const row of (costsRes.data ?? [])) {
+      const typedRow = row as unknown as WeeklyPropertyCostRow
+      const prop = typedRow.property
+      if (!prop) continue
+      const labor = typedRow.labor_cost ?? 0
+      const spread = typedRow.spread_cost ?? 0
+      const mgmt_fee = typedRow.total_cost - labor - spread
+      costs.push({
+        property_id: prop.id,
+        property_code: prop.code,
+        property_name: prop.name,
+        total_units: prop.total_units ?? 0,
+        labor_cost: labor,
+        spread_cost: spread,
+        mgmt_fee: Math.max(0, mgmt_fee),
+        total_cost: typedRow.total_cost,
+        portfolio_id: prop.portfolio_id,
+        billing_llc: prop.billing_llc ?? null,
+        portfolio_owner_llc: prop.portfolio?.owner_llc ?? null,
+      })
+    }
+    setPropertyCosts(costs)
+    setLoading(false)
+  }, [weekId])
+
+  useEffect(() => { load() }, [load])
+
+  const generateInvoices = useCallback(async (refetchInvoices: () => Promise<void>) => {
+    setGenerating(true)
+    const supabase = createClient()
+
+    const groups: Record<string, PropertyCost[]> = {}
+    for (const pc of propertyCosts) {
+      const llcName = pc.billing_llc ?? pc.portfolio_owner_llc ?? `Park — ${pc.property_code}`
+      if (!groups[llcName]) groups[llcName] = []
+      groups[llcName].push(pc)
+    }
+
+    for (const [llc, props] of Object.entries(groups)) {
+      if (props.length === 0) continue
+      const total = props.reduce((s, p) => s + p.total_cost, 0)
+      if (total === 0) continue
+
+      const { data: existing } = await supabase
+        .from('payroll_invoices')
+        .select('id')
+        .eq('payroll_week_id', weekId)
+        .eq('owner_llc', llc)
+        .single()
+
+      let invoiceId: string
+      if (existing) {
+        invoiceId = existing.id
+      } else {
+        const { data: inv, error: invErr } = await supabase.from('payroll_invoices').insert({
+          payroll_week_id: weekId,
+          owner_llc: llc,
+          status: 'draft',
+          total_amount: total,
+        }).select().single()
+        if (invErr || !inv) continue
+        invoiceId = inv.id
+      }
+
+      for (const pc of props) {
+        await supabase.from('payroll_invoice_line_items').upsert({
+          invoice_id: invoiceId,
+          property_id: pc.property_id,
+          description: `${pc.property_code} — ${pc.property_name}`,
+          cost_type: 'labor',
+          labor_amount: pc.labor_cost,
+          spread_amount: pc.spread_cost,
+          mgmt_fee_amount: pc.mgmt_fee,
+          total_amount: pc.total_cost,
+        })
+      }
+    }
+
+    await supabase.from('payroll_weeks').update({ status: 'invoiced' }).eq('id', weekId)
+    await refetchInvoices()
+    setGenerating(false)
+  }, [weekId, propertyCosts])
+
+  const approveAll = useCallback(async (
+    invoiceIds: string[],
+    approveInvoice: (id: string) => Promise<void>,
+  ) => {
+    setApprovingAll(true)
+    for (const id of invoiceIds) {
+      await approveInvoice(id)
+    }
+    const supabase = createClient()
+    const userId = (await supabase.auth.getUser()).data.user?.id
+    await supabase.from('payroll_approvals').insert({
+      payroll_week_id: weekId,
+      stage: 'invoice',
+      approved_by: userId,
+      approved_at: new Date().toISOString(),
+    })
+    setApprovingAll(false)
+  }, [weekId])
+
+  return {
+    week, propertyCosts, loading, error, generating, approvingAll,
+    generateInvoices, approveAll, refetch: load,
+  }
+}
