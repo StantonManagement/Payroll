@@ -228,11 +228,13 @@ export interface PayrollApproval {
 
 export interface Property {
   id: string
+  appfolio_property_id: string
   code: string
   name: string
   address: string | null
   total_units: number | null
   portfolio_id: string | null
+  billing_llc: string | null
   is_active: boolean
 }
 

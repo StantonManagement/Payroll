@@ -37,7 +37,7 @@ export function usePayrollWeekReview(weekId: string) {
       supabase.from('payroll_time_entries').select('*').eq('payroll_week_id', weekId).eq('is_flagged', false).eq('is_active', true),
       supabase.from('payroll_adjustments').select('*').eq('payroll_week_id', weekId).eq('is_active', true),
       supabase.from('payroll_management_fee_config').select('*').order('effective_date', { ascending: false }),
-      supabase.from('properties').select('id, code, name, total_units, portfolio_id, address, is_active').eq('is_active', true),
+      supabase.from('properties').select('id, appfolio_property_id, code, name, total_units, portfolio_id, address, billing_llc, is_active').eq('is_active', true),
       supabase.from('payroll_approvals').select('*').eq('payroll_week_id', weekId).eq('stage', 'payroll'),
       supabase.from('payroll_employee_rates').select('*'),
     ])

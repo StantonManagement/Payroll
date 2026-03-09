@@ -5,8 +5,8 @@ import { Plus, ChevronRight, ChevronDown, Pencil, Check, Building2 } from 'lucid
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/payroll/useAuth'
 import {
-  PageHeader, FormButton, FormField, FormInput, FormTextarea,
-  InfoBlock, SectionDivider,
+  PageHeader, FormButton, FormField, FormInput, FormTextarea, FormSelect,
+  InfoBlock, SectionDivider, Drawer,
 } from '@/components/form'
 import { format } from 'date-fns'
 
@@ -14,6 +14,7 @@ interface Portfolio {
   id: string
   name: string
   description: string | null
+  owner_llc: string | null
   is_active: boolean
   created_at: string
   property_count: number
@@ -22,11 +23,25 @@ interface Portfolio {
 
 interface Property {
   id: string
+  appfolio_property_id: string
   code: string
   name: string
   address: string | null
   total_units: number | null
   portfolio_id: string | null
+  billing_llc: string | null
+  is_active: boolean
+}
+
+interface CreatePropertyInput {
+  appfolio_property_id: string
+  code: string
+  name: string
+  address: string | null
+  total_units: number | null
+  billing_llc: string | null
+  portfolio_id: string | null
+  is_active: boolean
 }
 
 type WizardStep = 'details' | 'properties' | 'llc' | 'fee' | 'confirm'
@@ -57,6 +72,17 @@ const emptyWizard = (): WizardState => ({
   feeEffectiveDate: new Date().toISOString().split('T')[0],
 })
 
+const emptyPropertyForm = (): CreatePropertyInput => ({
+  appfolio_property_id: '',
+  code: '',
+  name: '',
+  address: null,
+  total_units: null,
+  billing_llc: null,
+  portfolio_id: null,
+  is_active: true,
+})
+
 export default function PortfoliosPage() {
   const { isAdmin } = useAuth()
   const [portfolios, setPortfolios] = useState<Portfolio[]>([])
@@ -70,13 +96,17 @@ export default function PortfoliosPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editingLLC, setEditingLLC] = useState<string>('')
   const [newLLCName, setNewLLCName] = useState('')
+  const [propertyDrawerOpen, setPropertyDrawerOpen] = useState(false)
+  const [propertyForm, setPropertyForm] = useState<CreatePropertyInput>(emptyPropertyForm())
+  const [propertySaving, setPropertySaving] = useState(false)
+  const [propertyError, setPropertyError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const [portRes, propRes] = await Promise.all([
-      supabase.from('portfolios').select('id, name, description, is_active, created_at').eq('is_active', true).order('name'),
-      supabase.from('properties').select('id, code, name, address, total_units, portfolio_id').eq('is_active', true).order('code'),
+      supabase.from('portfolios').select('id, name, description, owner_llc, is_active, created_at').eq('is_active', true).order('name'),
+      supabase.from('properties').select('id, appfolio_property_id, code, name, address, total_units, portfolio_id, billing_llc, is_active').eq('is_active', true).order('code'),
     ])
     const props = propRes.data ?? []
     setAllProperties(props)
@@ -184,6 +214,88 @@ export default function PortfoliosPage() {
 
   const unassignedProperties = allProperties.filter(p => !p.portfolio_id)
 
+  const selectedPropertyPortfolio = portfolios.find(p => p.id === propertyForm.portfolio_id)
+  const fallbackOwnerLLC = selectedPropertyPortfolio?.owner_llc?.trim() ?? ''
+
+  const handleCreateProperty = async () => {
+    setPropertyError(null)
+    if (!isAdmin) { setPropertyError('Only admins can add properties.'); return }
+
+    const normalizedAppfolioId = propertyForm.appfolio_property_id.trim().toUpperCase()
+    const normalizedCode = propertyForm.code.trim().toUpperCase()
+    const normalizedName = propertyForm.name.trim()
+    const normalizedAddress = propertyForm.address?.trim() ? propertyForm.address.trim() : null
+    const normalizedBillingLLC = propertyForm.billing_llc?.trim() ? propertyForm.billing_llc.trim() : null
+
+    if (!normalizedAppfolioId) { setPropertyError('AppFolio Property ID is required.'); return }
+    if (!normalizedCode) { setPropertyError('Property code is required.'); return }
+    if (!normalizedName) { setPropertyError('Property name is required.'); return }
+
+    let parsedUnits: number | null = null
+    if (propertyForm.total_units !== null && String(propertyForm.total_units).trim() !== '') {
+      parsedUnits = Number(propertyForm.total_units)
+      if (!Number.isInteger(parsedUnits) || parsedUnits < 0) {
+        setPropertyError('Unit count must be a whole number greater than or equal to 0.')
+        return
+      }
+    }
+
+    setPropertySaving(true)
+    const supabase = createClient()
+
+    const [codeCheck, appfolioCheck] = await Promise.all([
+      supabase.from('properties').select('id').ilike('code', normalizedCode).limit(1),
+      supabase.from('properties').select('id').eq('appfolio_property_id', normalizedAppfolioId).limit(1),
+    ])
+
+    if (codeCheck.error || appfolioCheck.error) {
+      setPropertyError(codeCheck.error?.message ?? appfolioCheck.error?.message ?? 'Failed to validate property uniqueness.')
+      setPropertySaving(false)
+      return
+    }
+
+    if ((codeCheck.data ?? []).length > 0) {
+      setPropertyError('A property with this code already exists. Use a unique code.')
+      setPropertySaving(false)
+      return
+    }
+    if ((appfolioCheck.data ?? []).length > 0) {
+      setPropertyError('A property with this AppFolio Property ID already exists.')
+      setPropertySaving(false)
+      return
+    }
+
+    const payload: CreatePropertyInput = {
+      appfolio_property_id: normalizedAppfolioId,
+      code: normalizedCode,
+      name: normalizedName,
+      address: normalizedAddress,
+      total_units: parsedUnits,
+      billing_llc: normalizedBillingLLC,
+      portfolio_id: propertyForm.portfolio_id,
+      is_active: propertyForm.is_active,
+    }
+
+    const { error } = await supabase.from('properties').insert(payload)
+    if (error) {
+      const msg = error.message.toLowerCase()
+      if (msg.includes('appfolio_property_id')) {
+        setPropertyError('This AppFolio Property ID is already used by another property.')
+      } else if (msg.includes('code')) {
+        setPropertyError('This property code is already in use.')
+      } else {
+        setPropertyError(error.message)
+      }
+      setPropertySaving(false)
+      return
+    }
+
+    setPropertyDrawerOpen(false)
+    setPropertyForm(emptyPropertyForm())
+    await load()
+    setPropertySaving(false)
+  }
+
   return (
     <div>
       <PageHeader
@@ -191,10 +303,24 @@ export default function PortfoliosPage() {
         subtitle="Onboard new management portfolios — no development work required"
         actions={
           isAdmin ? (
-            <FormButton size="sm" onClick={() => { setShowWizard(true); setWizardStep('details'); setWizard(emptyWizard()); setWizardError(null) }}>
-              <Plus size={14} className="mr-1" />
-              New Portfolio
-            </FormButton>
+            <div className="flex gap-2">
+              <FormButton
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setPropertyError(null)
+                  setPropertyForm(emptyPropertyForm())
+                  setPropertyDrawerOpen(true)
+                }}
+              >
+                <Plus size={14} className="mr-1" />
+                Add Property
+              </FormButton>
+              <FormButton size="sm" onClick={() => { setShowWizard(true); setWizardStep('details'); setWizard(emptyWizard()); setWizardError(null) }}>
+                <Plus size={14} className="mr-1" />
+                New Portfolio
+              </FormButton>
+            </div>
           ) : undefined
         }
       />
@@ -508,6 +634,98 @@ export default function PortfoliosPage() {
           </div>
         )}
       </div>
+
+      <Drawer open={propertyDrawerOpen} onClose={() => setPropertyDrawerOpen(false)} title="Add Property">
+        {propertyError && <InfoBlock variant="error">{propertyError}</InfoBlock>}
+
+        <FormField label="AppFolio Property ID" required helperText="Canonical dedup ID from AppFolio (required and unique).">
+          <FormInput
+            value={propertyForm.appfolio_property_id}
+            onChange={e => setPropertyForm(f => ({ ...f, appfolio_property_id: e.target.value }))}
+            placeholder="e.g., B-1034"
+          />
+        </FormField>
+
+        <FormField label="Property Code" required>
+          <FormInput
+            value={propertyForm.code}
+            onChange={e => setPropertyForm(f => ({ ...f, code: e.target.value }))}
+            placeholder="e.g., PINE-01"
+          />
+        </FormField>
+
+        <FormField label="Property Name" required>
+          <FormInput
+            value={propertyForm.name}
+            onChange={e => setPropertyForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="e.g., Pine Street Apartments"
+          />
+        </FormField>
+
+        <FormField label="Address">
+          <FormTextarea
+            value={propertyForm.address ?? ''}
+            onChange={e => setPropertyForm(f => ({ ...f, address: e.target.value }))}
+            rows={2}
+          />
+        </FormField>
+
+        <FormField label="Unit Count" helperText="Whole number (0 or greater)">
+          <FormInput
+            type="number"
+            min="0"
+            step="1"
+            value={propertyForm.total_units ?? ''}
+            onChange={e => setPropertyForm(f => ({
+              ...f,
+              total_units: e.target.value === '' ? null : Number(e.target.value),
+            }))}
+          />
+        </FormField>
+
+        <FormField label="Owner LLC (Billing Entity)" helperText="Overrides portfolio owner for invoice grouping when provided.">
+          <FormInput
+            value={propertyForm.billing_llc ?? ''}
+            onChange={e => setPropertyForm(f => ({ ...f, billing_llc: e.target.value }))}
+            placeholder="e.g., SREP Park 1 LLC"
+          />
+        </FormField>
+
+        <FormField label="Portfolio">
+          <FormSelect
+            value={propertyForm.portfolio_id ?? ''}
+            onChange={e => setPropertyForm(f => ({ ...f, portfolio_id: e.target.value || null }))}
+          >
+            <option value="">— Unassigned —</option>
+            {portfolios.map(port => (
+              <option key={port.id} value={port.id}>{port.name}</option>
+            ))}
+          </FormSelect>
+        </FormField>
+
+        {!propertyForm.billing_llc?.trim() && fallbackOwnerLLC && (
+          <InfoBlock variant="default">
+            Billing fallback: this property will use portfolio owner LLC "{fallbackOwnerLLC}" when invoices are generated.
+          </InfoBlock>
+        )}
+
+        <label className="flex items-center gap-2 text-sm cursor-pointer mb-4">
+          <input
+            type="checkbox"
+            checked={propertyForm.is_active}
+            onChange={e => setPropertyForm(f => ({ ...f, is_active: e.target.checked }))}
+            className="w-4 h-4 rounded-none"
+          />
+          Active
+        </label>
+
+        <div className="flex gap-2 pt-4 border-t border-[var(--divider)]">
+          <FormButton onClick={handleCreateProperty} loading={propertySaving} fullWidth>
+            Add Property
+          </FormButton>
+          <FormButton variant="ghost" onClick={() => setPropertyDrawerOpen(false)}>Cancel</FormButton>
+        </div>
+      </Drawer>
     </div>
   )
 }
