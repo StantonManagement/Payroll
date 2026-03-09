@@ -1,11 +1,49 @@
 export type EmployeeType = 'hourly' | 'salaried' | 'contractor'
 export type WeekStatus = 'draft' | 'corrections_complete' | 'payroll_approved' | 'invoiced' | 'statement_sent'
-export type TimeEntrySource = 'workyard' | 'manual'
-export type AdjustmentType = 'phone' | 'tool' | 'advance' | 'deduction_other'
+export type TimeEntrySource =
+  | 'workyard'
+  | 'workyard_api'
+  | 'workyard_corrected'
+  | 'manual_manager'
+  | 'manual_spread'
+  | 'sms_employee'
+  | 'mileage_workyard'
+  | 'manual' // legacy
+export type AdjustmentType = 'phone' | 'tool' | 'advance' | 'deduction_other' | 'expense_reimbursement'
 export type AllocationMethod = 'employee_pay' | 'unit_weighted' | 'direct'
 export type InvoiceStatus = 'draft' | 'approved' | 'sent'
 export type CostType = 'labor' | 'spread' | 'mgmt_fee'
 export type ApprovalStage = 'timesheet' | 'payroll' | 'invoice' | 'statement'
+export type CorrectionOperation = 'reassign' | 'split' | 'add' | 'remove'
+export type TravelPremiumType = 'per_day' | 'flat_per_job'
+export type ExpenseType = 'gas' | 'tolls' | 'parking' | 'materials' | 'tools' | 'food' | 'other' | 'mileage'
+export type ExpensePaymentMethod = 'personal' | 'company_card' | 'company_account' | 'unknown'
+export type ExpenseSubmissionStatus = 'pending' | 'approved' | 'rejected' | 'correction_requested' | 'bookkeeping_only'
+export type ExpenseAllocationMethod = 'direct' | 'unit_weighted' | 'gas_auto'
+export type ExpenseApprovalAction = 'approved' | 'rejected' | 'correction_requested' | 'routed_to_bookkeeping' | 'payment_method_resolved'
+
+export interface GasAllocationEntry {
+  property_id: string
+  property_code?: string
+  property_name?: string
+  visits: number
+  pct: number
+  amount: number
+}
+
+export interface GasAllocationAudit {
+  employee_id: string
+  window_start: string
+  window_end: string
+  auto_allocation: GasAllocationEntry[]
+  override_used: boolean
+}
+
+export interface PropertyOverride {
+  item_id: string
+  original_property_id: string | null
+  new_property_id: string
+}
 
 export interface PayrollEmployee {
   id: string
@@ -66,6 +104,11 @@ export interface PayrollTimeEntry {
   workyard_timecardid: string | null
   is_flagged: boolean
   flag_reason: string | null
+  is_active: boolean
+  pending_resolution: boolean
+  pending_note: string | null
+  pending_since: string | null
+  spread_event_id: string | null
   created_at: string
   updated_at: string
   created_by: string | null
@@ -80,6 +123,7 @@ export interface PayrollTimesheetCorrection {
   to_property_id: string
   hours: number
   reason: string
+  operation: CorrectionOperation | null
   corrected_by: string
   corrected_at: string
 }
@@ -105,10 +149,12 @@ export interface PayrollAdjustment {
   amount: number
   description: string
   allocation_method: AllocationMethod
+  prior_week_id?: string | null
   created_at: string
   updated_at: string
   created_by: string | null
   employee?: PayrollEmployee
+  prior_week?: PayrollWeek
 }
 
 export interface PayrollManagementFeeConfig {
@@ -194,4 +240,89 @@ export interface Portfolio {
   id: string
   name: string
   is_active: boolean
+}
+
+export interface PayrollSpreadEvent {
+  id: string
+  payroll_week_id: string
+  employee_id: string
+  entry_date: string
+  total_hours: number
+  portfolio_id: string | null
+  reason: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  employee?: PayrollEmployee
+}
+
+export interface PayrollTravelPremium {
+  id: string
+  property_id: string
+  premium_type: TravelPremiumType
+  amount: number
+  effective_date: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  property?: Property
+}
+
+export interface PayrollGlobalConfig {
+  id: string
+  expense_cutoff_day: number | null
+  expense_cutoff_time: string | null
+  created_at: string
+  updated_at: string
+  created_by: string | null
+}
+
+export interface PayrollExpenseSubmission {
+  id: string
+  payroll_week_id: string | null
+  employee_id: string
+  submitted_by: string
+  submitted_at: string
+  signature_url: string
+  status: ExpenseSubmissionStatus
+  total_amount: number | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  created_by: string | null
+  employee?: PayrollEmployee
+  week?: PayrollWeek
+  items?: PayrollExpenseItem[]
+}
+
+export interface PayrollExpenseItem {
+  id: string
+  submission_id: string
+  expense_type: ExpenseType
+  amount: number
+  property_id: string | null
+  payment_method: ExpensePaymentMethod
+  receipt_image_url: string
+  description: string | null
+  prior_week_id: string | null
+  allocation_method: ExpenseAllocationMethod
+  allocation_detail: GasAllocationEntry[] | null
+  created_at: string
+  created_by: string | null
+  property?: Property
+  prior_week?: PayrollWeek
+}
+
+export interface PayrollExpenseApproval {
+  id: string
+  submission_id: string
+  action: ExpenseApprovalAction
+  actioned_by: string
+  actioned_at: string
+  notes: string | null
+  gas_allocation_audit: GasAllocationAudit | null
+  property_overrides: PropertyOverride[] | null
+  created_at: string
+  created_by: string | null
 }

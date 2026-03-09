@@ -1,8 +1,8 @@
 'use client'
 
+import { use } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { use } from 'react'
 import { ArrowLeft, ClipboardList, SlidersHorizontal, GitBranch } from 'lucide-react'
 
 const weekTabs = [

@@ -133,7 +133,7 @@ export default function PayrollDashboard() {
                       {Array.from({ length: 5 }).map((_, i) => (
                         <div
                           key={i}
-                          className={`h-1.5 flex-1 ${i <= stageNum ? 'bg-[var(--primary)]' : 'bg-[var(--divider)]'}`}
+                          className={`h-1.5 flex-1 ${i <= stageNum ? 'bg-[var(--accent)]' : 'bg-[var(--divider)]'}`}
                         />
                       ))}
                     </div>

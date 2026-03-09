@@ -11,8 +11,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Workyard API credentials not configured' }, { status: 500 })
   }
 
+  const approvedOnly = req.nextUrl.searchParams.get('approvedOnly') !== 'false'
+
   try {
-    const result = await fetchWorkyardTimecards(weekStart)
+    const result = await fetchWorkyardTimecards(weekStart, approvedOnly)
     return NextResponse.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

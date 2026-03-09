@@ -11,7 +11,7 @@ export default function WeekReviewPage({ params }: { params: Promise<{ weekId: s
   const { weekId } = use(params)
   const {
     week, employees, entries, adjustments, feeConfigs, properties, employeeRates,
-    approved, loading, approving, approvePayroll,
+    approved, pendingCount, loading, approving, approvePayroll,
   } = usePayrollWeekReview(weekId)
 
   const result = useMemo(() => {
@@ -25,7 +25,7 @@ export default function WeekReviewPage({ params }: { params: Promise<{ weekId: s
   }, [employees, employeeRates, week, entries, adjustments, feeConfigs, properties])
 
   const timesheetApproved = week?.status !== 'draft'
-  const canApprovePayroll = timesheetApproved && !approved && result !== null
+  const canApprovePayroll = timesheetApproved && !approved && result !== null && pendingCount === 0
   const hasPhoneReimbursements = adjustments.some(a => a.type === 'phone')
   const showAdjustmentReminder = timesheetApproved && !approved && !hasPhoneReimbursements
 
@@ -44,7 +44,16 @@ export default function WeekReviewPage({ params }: { params: Promise<{ weekId: s
           <InfoBlock variant="warning" title="Timesheet Not Yet Approved">
             Resolve all flagged entries and approve the timesheet before payroll can be calculated.
             <div className="mt-1">
-              <a href="/payroll/corrections" className="underline">Go to Correction Queue →</a>
+              <a href={`/payroll/timesheets?week=${weekId}`} className="underline">Go to Timesheet Adjustments →</a>
+            </div>
+          </InfoBlock>
+        )}
+
+        {timesheetApproved && pendingCount > 0 && !approved && (
+          <InfoBlock variant="warning" title="Pending Entries Block Approval">
+            {pendingCount} {pendingCount === 1 ? 'entry is' : 'entries are'} marked Pending and must be resolved or discarded before payroll can be approved.
+            <div className="mt-1">
+              <a href={`/payroll/timesheets?week=${weekId}`} className="underline">Go to Timesheet Adjustments →</a>
             </div>
           </InfoBlock>
         )}

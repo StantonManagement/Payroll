@@ -22,6 +22,7 @@ export function useTimeEntries(weekId: string | null) {
         property:properties(id, code, name, total_units, portfolio_id)
       `)
       .eq('payroll_week_id', weekId)
+      .eq('is_active', true)
       .order('entry_date')
     if (err) setError(err.message)
     else setEntries(data ?? [])

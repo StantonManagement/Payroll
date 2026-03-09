@@ -1,30 +1,37 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { Eye, EyeOff } from 'lucide-react'
 import { FormInput, FormButton } from '@/components/form'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
-    const supabase = createClient()
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
-    if (err) {
-      setError(err.message)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? 'Sign in failed')
+        return
+      }
+      window.location.href = '/payroll'
+    } catch {
+      setError('Network error — please try again')
+    } finally {
       setLoading(false)
-      return
     }
-    router.push('/payroll')
-    router.refresh()
   }
 
   return (
@@ -53,6 +60,7 @@ export default function LoginPage() {
               </label>
               <FormInput
                 type="email"
+                name="email"
                 required
                 autoComplete="email"
                 value={email}
@@ -65,13 +73,24 @@ export default function LoginPage() {
               <label className="block text-xs font-medium text-[var(--ink)] uppercase tracking-wide mb-1.5">
                 Password
               </label>
-              <FormInput
-                type="password"
-                required
-                autoComplete="current-password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-              />
+              <div className="relative">
+                <FormInput
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--ink)] transition-colors duration-200"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
             </div>
 
             <FormButton

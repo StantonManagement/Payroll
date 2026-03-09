@@ -1,15 +1,35 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, BarChart2, ChevronDown, ChevronUp, RefreshCw, Check, Link } from 'lucide-react'
 import { usePayrollEmployees, useEmployeeRates, useEmployeeDeptSplits } from '@/hooks/payroll/usePayrollEmployees'
+import { useWorkyardReliability } from '@/hooks/payroll/useWorkyardReliability'
 import DataTable, { Column } from '@/components/kit/DataTable'
 import {
   PageHeader, FormButton, FormField, FormInput, FormSelect, StatusBadge,
   Drawer, SectionDivider, InfoBlock, FormTextarea,
 } from '@/components/form'
 import type { PayrollEmployee } from '@/lib/supabase/types'
+import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
+
+interface WYEmployeeBasic {
+  employee_id: number
+  display_name: string
+  first_name: string
+  last_name: string
+  email: string | null
+  status: string
+  title: string | null
+}
+
+interface SyncRow {
+  wyId: string
+  wyName: string
+  wyFirstName: string
+  matchedEmployeeId: string
+  autoMatched: boolean
+}
 
 const DEPARTMENTS = ['Acquisitions', 'Asset Management', 'Collections', 'Maintenance', 'Leasing', 'Administration']
 
@@ -55,8 +75,17 @@ interface DeptSplitRow { department: string; pct: string }
 export default function EmployeesPage() {
   const { employees, loading, refetch, upsertEmployee, addRate, upsertDeptSplits } = usePayrollEmployees(true)
   const [showAll, setShowAll] = useState(false)
+  const [showReliability, setShowReliability] = useState(false)
+  const { rows: reliabilityRows, loading: relLoading } = useWorkyardReliability()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<Partial<PayrollEmployee>>(emptyEmployee)
+
+  const [syncOpen, setSyncOpen] = useState(false)
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncSaving, setSyncSaving] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncRows, setSyncRows] = useState<SyncRow[]>([])
+  const [syncDone, setSyncDone] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newRate, setNewRate] = useState('')
@@ -64,6 +93,69 @@ export default function EmployeesPage() {
   const [deptSplits, setDeptSplits] = useState<DeptSplitRow[]>([
     { department: '', pct: '' },
   ])
+
+  const handleSyncFetch = async () => {
+    setSyncLoading(true)
+    setSyncError(null)
+    setSyncRows([])
+    setSyncDone(false)
+    try {
+      const res = await fetch('/api/workyard/employees')
+      const json = await res.json()
+      if (!res.ok) {
+        setSyncError(json.error ?? 'Failed to fetch Workyard employees')
+        return
+      }
+      const wyEmps: WYEmployeeBasic[] = json.employees
+      const byWorkyardId = Object.fromEntries(
+        employees.filter(e => e.workyard_id).map(e => [e.workyard_id!.toLowerCase(), e])
+      )
+      const byFullName = Object.fromEntries(employees.map(e => [e.name.toLowerCase(), e]))
+      const byFirstName = Object.fromEntries(employees.map(e => [e.name.toLowerCase().split(' ')[0], e]))
+
+      const rows: SyncRow[] = wyEmps.map(wy => {
+        const wyIdStr = String(wy.employee_id)
+        const alreadyLinked = byWorkyardId[wyIdStr.toLowerCase()]
+        const byFull = byFullName[wy.display_name.toLowerCase()]
+        const byFirst = byFirstName[wy.first_name.toLowerCase()]
+        const matched = alreadyLinked ?? byFull ?? byFirst
+        return {
+          wyId: wyIdStr,
+          wyName: wy.display_name,
+          wyFirstName: wy.first_name,
+          matchedEmployeeId: matched?.id ?? '',
+          autoMatched: !!matched,
+        }
+      })
+      setSyncRows(rows)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleSyncSave = async () => {
+    setSyncSaving(true)
+    setSyncError(null)
+    try {
+      const supabase = createClient()
+      const toUpdate = syncRows.filter(r => r.matchedEmployeeId)
+      for (const row of toUpdate) {
+        const { error } = await supabase
+          .from('payroll_employees')
+          .update({ workyard_id: row.wyId })
+          .eq('id', row.matchedEmployeeId)
+        if (error) throw new Error(error.message)
+      }
+      await refetch()
+      setSyncDone(true)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSyncSaving(false)
+    }
+  }
 
   const { rates } = useEmployeeRates(editing.id ?? null)
   const { splits } = useEmployeeDeptSplits(editing.id ?? null)
@@ -106,7 +198,6 @@ export default function EmployeesPage() {
           employee_id: savedId,
           rate: parseFloat(newRate),
           effective_date: newRateDate,
-          created_by: null,
         })
       }
       if (editing.type === 'salaried' && filledSplits.length > 0) {
@@ -148,6 +239,10 @@ export default function EmployeesPage() {
               />
               Show inactive
             </label>
+            <FormButton size="sm" variant="secondary" onClick={() => { setSyncOpen(v => !v); setSyncRows([]); setSyncError(null); setSyncDone(false) }}>
+              <Link size={14} className="mr-1" />
+              Sync Workyard IDs
+            </FormButton>
             <FormButton size="sm" onClick={openNew}>
               <Plus size={14} className="mr-1" />
               Add Employee
@@ -155,6 +250,80 @@ export default function EmployeesPage() {
           </div>
         }
       />
+
+      {/* Workyard ID Sync Panel */}
+      {syncOpen && (
+        <div className="border-b border-[var(--border)] bg-[var(--bg-section)] px-6 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-serif text-base text-[var(--primary)]">Sync Workyard IDs</h3>
+            <p className="text-xs text-[var(--muted)]">Match payroll employees to their Workyard accounts to enable automatic time card import</p>
+          </div>
+
+          {syncError && (
+            <div className="mb-3 p-2 bg-[var(--error)]/10 border border-[var(--error)]/30 text-xs text-[var(--error)]">{syncError}</div>
+          )}
+
+          {syncDone && (
+            <div className="mb-3 p-2 bg-[var(--success)]/10 border border-[var(--success)]/30 text-xs text-[var(--success)] flex items-center gap-2">
+              <Check size={12} /> Workyard IDs saved successfully.
+            </div>
+          )}
+
+          {syncRows.length === 0 ? (
+            <FormButton onClick={handleSyncFetch} loading={syncLoading} size="sm">
+              <RefreshCw size={13} className="mr-1" />
+              {syncLoading ? 'Fetching…' : 'Fetch Workyard Employees'}
+            </FormButton>
+          ) : (
+            <>
+              <div className="border border-[var(--border)] overflow-auto max-h-72 mb-3">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[var(--primary)] text-white sticky top-0">
+                      <th className="px-3 py-2 text-left font-medium">Workyard Employee</th>
+                      <th className="px-3 py-2 text-left font-medium">Workyard ID</th>
+                      <th className="px-3 py-2 text-left font-medium">Match to Payroll Employee</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {syncRows.map((row, i) => (
+                      <tr key={row.wyId} className={`border-b border-[var(--divider)] ${i % 2 === 0 ? '' : 'bg-[var(--bg-section)]'}`}>
+                        <td className="px-3 py-1.5">
+                          <span className={row.autoMatched ? 'text-[var(--success)]' : 'text-[var(--muted)]'}>
+                            {row.autoMatched ? '✓ ' : ''}
+                          </span>
+                          {row.wyName}
+                        </td>
+                        <td className="px-3 py-1.5 font-mono">{row.wyId}</td>
+                        <td className="px-3 py-1.5">
+                          <select
+                            value={row.matchedEmployeeId}
+                            onChange={e => setSyncRows(prev => prev.map((r, j) => j === i ? { ...r, matchedEmployeeId: e.target.value, autoMatched: false } : r))}
+                            className="text-xs border border-[var(--border)] bg-[var(--bg)] px-2 py-1 w-full max-w-[180px]"
+                          >
+                            <option value="">— skip —</option>
+                            {employees.map(emp => (
+                              <option key={emp.id} value={emp.id}>{emp.name}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex gap-2">
+                <FormButton onClick={handleSyncSave} loading={syncSaving} size="sm">
+                  Save {syncRows.filter(r => r.matchedEmployeeId).length} Matches
+                </FormButton>
+                <FormButton variant="ghost" size="sm" onClick={() => { setSyncRows([]); setSyncDone(false); setSyncError(null) }}>
+                  Reset
+                </FormButton>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         <DataTable
@@ -166,6 +335,70 @@ export default function EmployeesPage() {
           emptyMessage="No employees found"
           exportable
         />
+      </div>
+
+      {/* Workyard Reliability Section */}
+      <div className="border-t border-[var(--border)]">
+        <button
+          type="button"
+          onClick={() => setShowReliability(v => !v)}
+          className="w-full flex items-center gap-2 px-6 py-3 bg-[var(--bg-section)] hover:bg-[var(--primary)]/5 transition-colors text-left"
+        >
+          <BarChart2 size={14} className="text-[var(--muted)]" />
+          <span className="font-medium text-sm text-[var(--ink)]">Workyard Reliability</span>
+          <span className="text-xs text-[var(--muted)] ml-1">— % of hours sourced from Workyard vs. manually entered</span>
+          {showReliability ? <ChevronUp size={13} className="ml-auto text-[var(--muted)]" /> : <ChevronDown size={13} className="ml-auto text-[var(--muted)]" />}
+        </button>
+
+        {showReliability && (
+          <div className="overflow-auto">
+            {relLoading ? (
+              <div className="px-6 py-4 text-sm text-[var(--muted)]">Loading…</div>
+            ) : reliabilityRows.length === 0 ? (
+              <div className="px-6 py-4 text-sm text-[var(--muted)]">No time entry data available yet.</div>
+            ) : (
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-[var(--bg-section)] text-xs text-[var(--muted)] border-b border-[var(--border)]">
+                    <th className="px-4 py-2 text-left font-medium">Employee</th>
+                    <th className="px-4 py-2 text-right font-medium">Total Entries</th>
+                    <th className="px-4 py-2 text-right font-medium">Workyard</th>
+                    <th className="px-4 py-2 text-right font-medium">Manual</th>
+                    <th className="px-4 py-2 text-right font-medium">Workyard %</th>
+                    <th className="px-4 py-2 text-right font-medium">Avg Unalloc/Wk</th>
+                    <th className="px-4 py-2 text-right font-medium">Wks w/ Unalloc</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reliabilityRows.map((row, i) => (
+                    <tr key={row.employee_id} className={`border-b border-[var(--divider)] ${i % 2 === 0 ? '' : 'bg-[var(--bg-section)]'}`}>
+                      <td className="px-4 py-2 font-medium">{row.employee_name}</td>
+                      <td className="px-4 py-2 text-right">{row.total_entries}</td>
+                      <td className="px-4 py-2 text-right text-[var(--success)]">{row.workyard_entries}</td>
+                      <td className="px-4 py-2 text-right text-[var(--warning)]">{row.manual_entries}</td>
+                      <td className="px-4 py-2 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 bg-[var(--border)] rounded-none overflow-hidden">
+                            <div
+                              className={`h-full ${row.workyard_pct >= 70 ? 'bg-[var(--success)]' : row.workyard_pct >= 40 ? 'bg-[var(--warning)]' : 'bg-[var(--error)]'}`}
+                              style={{ width: `${row.workyard_pct}%` }}
+                            />
+                          </div>
+                          <span className={`font-medium text-xs ${
+                            row.workyard_pct >= 70 ? 'text-[var(--success)]' :
+                            row.workyard_pct >= 40 ? 'text-[var(--warning)]' : 'text-[var(--error)]'
+                          }`}>{row.workyard_pct}%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-right">{row.avg_unallocated_per_week}h</td>
+                      <td className="px-4 py-2 text-right">{row.weeks_with_unallocated}/{row.total_weeks}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
 
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title={editing.id ? 'Edit Employee' : 'New Employee'} width={520}>

@@ -1,17 +1,41 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Check } from 'lucide-react'
 import { useAdminMgmtFee } from '@/hooks/payroll/useAdminMgmtFee'
+import { useAdminGlobalConfig } from '@/hooks/payroll/useAdminGlobalConfig'
 import { PageHeader, FormButton, FormField, FormInput, FormSelect, InfoBlock, SectionDivider } from '@/components/form'
 import { format } from 'date-fns'
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 export default function MgmtFeePage() {
   const { configs, portfolios, loading, addRate } = useAdminMgmtFee()
+  const { config: globalConfig, properties, users, loading: gcLoading, saveCutoff, setPropertyApprover } = useAdminGlobalConfig()
+
+  // Mgmt fee form
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ rate_pct: '10', portfolio_id: '', effective_date: format(new Date(), 'yyyy-MM-dd') })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Expense cutoff form
+  const [cutoffDay, setCutoffDay] = useState<string>('')
+  const [cutoffTime, setCutoffTime] = useState<string>('')
+  const [savingCutoff, setSavingCutoff] = useState(false)
+  const [cutoffSaved, setCutoffSaved] = useState(false)
+  const [cutoffError, setCutoffError] = useState<string | null>(null)
+
+  // Approver filter
+  const [approverFilter, setApproverFilter] = useState('')
+
+  // Initialise cutoff form from loaded config
+  useEffect(() => {
+    if (globalConfig) {
+      setCutoffDay(String(globalConfig.expense_cutoff_day ?? 3))
+      setCutoffTime((globalConfig.expense_cutoff_time ?? '17:00:00').slice(0, 5))
+    }
+  }, [globalConfig])
 
   const handleSave = async () => {
     const rate = parseFloat(form.rate_pct)
@@ -29,11 +53,34 @@ export default function MgmtFeePage() {
     }
   }
 
+  const handleSaveCutoff = async () => {
+    if (!cutoffTime) { setCutoffError('Time is required.'); return }
+    setSavingCutoff(true)
+    setCutoffError(null)
+    try {
+      await saveCutoff(parseInt(cutoffDay, 10), cutoffTime + ':00')
+      setCutoffSaved(true)
+      setTimeout(() => setCutoffSaved(false), 2500)
+    } catch (e: unknown) {
+      setCutoffError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSavingCutoff(false)
+    }
+  }
+
   // Group by portfolio
   const globalConfigs = configs.filter(c => c.portfolio_id === null)
   const portfolioConfigs = configs.filter(c => c.portfolio_id !== null)
 
   const portfolioName = (id: string) => portfolios.find(p => p.id === id)?.name ?? id
+
+  const filteredProperties = approverFilter
+    ? properties.filter(p =>
+        p.code.toLowerCase().includes(approverFilter.toLowerCase()) ||
+        p.name.toLowerCase().includes(approverFilter.toLowerCase()) ||
+        (p.portfolio_name ?? '').toLowerCase().includes(approverFilter.toLowerCase())
+      )
+    : properties
 
   return (
     <div>
@@ -137,6 +184,105 @@ export default function MgmtFeePage() {
             )}
           </>
         )}
+
+        {/* ── Expense Submission Cutoff ─────────────────────────────────── */}
+        <div className="mt-10">
+          <SectionDivider label="Expense Submission Cutoff" />
+          <InfoBlock variant="default" title="How the cutoff works">
+            Submissions received before the cutoff are included in the current payroll week.
+            Submissions after the cutoff are automatically queued for the following week.
+            Employees are shown which week their submission will pay in — before they sign.
+          </InfoBlock>
+          {gcLoading ? (
+            <div className="text-sm text-[var(--muted)] py-4">Loading…</div>
+          ) : (
+            <div className="flex items-end gap-4 mt-4">
+              <FormField label="Cutoff Day">
+                <FormSelect value={cutoffDay} onChange={e => setCutoffDay(e.target.value)}>
+                  {DAY_NAMES.map((d, i) => (
+                    <option key={i} value={String(i)}>{d}</option>
+                  ))}
+                </FormSelect>
+              </FormField>
+              <FormField label="Cutoff Time">
+                <FormInput
+                  type="time"
+                  value={cutoffTime}
+                  onChange={e => setCutoffTime(e.target.value)}
+                />
+              </FormField>
+              <div className="mb-4">
+                <FormButton onClick={handleSaveCutoff} loading={savingCutoff}>
+                  {cutoffSaved ? <><Check size={13} className="mr-1 inline" />Saved</> : 'Save Cutoff'}
+                </FormButton>
+              </div>
+            </div>
+          )}
+          {cutoffError && <InfoBlock variant="error">{cutoffError}</InfoBlock>}
+        </div>
+
+        {/* ── Property Expense Approvers ────────────────────────────────── */}
+        <div className="mt-10 mb-8">
+          <SectionDivider label="Expense Approvers by Property" />
+          <InfoBlock variant="default" title="How approver routing works">
+            When an employee submits an expense for a property, it routes to that property&apos;s
+            assigned approver. Properties with no approver set will fall to global admin review.
+          </InfoBlock>
+          <div className="mt-4 mb-3">
+            <FormInput
+              placeholder="Filter by property code, name, or portfolio…"
+              value={approverFilter}
+              onChange={e => setApproverFilter(e.target.value)}
+            />
+          </div>
+          {gcLoading ? (
+            <div className="text-sm text-[var(--muted)] py-4">Loading…</div>
+          ) : (
+            <table className="w-full text-sm border border-[var(--border)]">
+              <thead>
+                <tr className="bg-[var(--bg-section)] text-xs text-[var(--muted)]">
+                  <th className="px-4 py-2.5 text-left font-medium">Code</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Property</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Portfolio</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Approver</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProperties.map(prop => (
+                  <tr key={prop.id} className="border-t border-[var(--divider)]">
+                    <td className="px-4 py-2.5 font-mono text-xs text-[var(--muted)]">{prop.code}</td>
+                    <td className="px-4 py-2.5">{prop.name}</td>
+                    <td className="px-4 py-2.5 text-[var(--muted)]">{prop.portfolio_name ?? '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <FormSelect
+                        value={prop.approver_user_id ?? ''}
+                        onChange={async e => {
+                          try {
+                            await setPropertyApprover(prop.id, e.target.value || null)
+                          } catch {}
+                        }}
+                      >
+                        <option value="">— No approver set —</option>
+                        {users.map(u => (
+                          <option key={u.id} value={u.id}>
+                            {u.full_name ?? u.email} ({u.role})
+                          </option>
+                        ))}
+                      </FormSelect>
+                    </td>
+                  </tr>
+                ))}
+                {filteredProperties.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-3 text-[var(--muted)] text-sm">
+                      {approverFilter ? 'No properties match filter.' : 'No active properties.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   )

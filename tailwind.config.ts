@@ -27,6 +27,7 @@ const config: Config = {
         warning: '#92400e',
         'bg-section': '#f8f7f5',
         'bg-input': '#ffffff',
+        'surface-chrome': '#e8e6e2',
       },
     },
   },

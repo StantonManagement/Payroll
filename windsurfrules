@@ -45,6 +45,7 @@ All visual decisions come from the design system. No exceptions.
 - Read from canonical tables only — never query `AF_` staging tables directly
 - Never write to AF-Authoritative columns (`tenants`, `work_orders`, `inspections`, `leases`)
 - FK to `properties`, `portfolios`, `units` from canonical tables — never duplicate these entities
+- `portfolios.id` is `TEXT` not `UUID` — FK columns referencing `portfolios` must be `TEXT`. All other canonical table PKs (`properties`, `payroll_employees`, etc.) are `UUID`
 - RLS required on every new table — no exceptions
 - No hard deletes — use `is_current = false`
 - Money: `NUMERIC(10,2)`
@@ -70,10 +71,23 @@ A layout rule made for one page does not apply to other pages. Never carry a siz
 - One hook per logical data domain
 - Always handle loading, error, and empty states explicitly
 - Realtime subscriptions must be cleaned up on unmount
+- When casting Supabase join results in TypeScript, use `as unknown as T` — Supabase infers joined relations as arrays even for many-to-one FKs, causing overlap errors with direct casts
 
 ---
 
-## 7. When Stuck
+## 7. File Operations
+
+When a file needs to be **completely replaced**, use `Set-Content` via PowerShell rather than iterative `edit` calls:
+
+```powershell
+Set-Content -Path "path/to/file.tsx" -Value "...new content..."
+```
+
+Repeated partial edits on a file being wholesale-replaced create loops and waste significant context. Use the shell for replacement; use `edit` only for targeted changes to files you intend to keep mostly intact.
+
+---
+
+## 8. When Stuck
 
 If a problem isn't resolving after two attempts:
 - State what approach was tried and why it isn't working

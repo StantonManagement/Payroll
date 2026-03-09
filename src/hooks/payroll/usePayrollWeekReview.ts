@@ -22,6 +22,7 @@ export function usePayrollWeekReview(weekId: string) {
   const [properties, setProperties] = useState<Property[]>([])
   const [employeeRates, setEmployeeRates] = useState<PayrollEmployeeRate[]>([])
   const [approved, setApproved] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [approving, setApproving] = useState(false)
@@ -33,7 +34,7 @@ export function usePayrollWeekReview(weekId: string) {
     const [weekRes, empRes, entRes, adjRes, feeRes, propRes, approvalRes, ratesRes] = await Promise.all([
       supabase.from('payroll_weeks').select('*').eq('id', weekId).single(),
       supabase.from('payroll_employees').select('*').eq('is_active', true),
-      supabase.from('payroll_time_entries').select('*').eq('payroll_week_id', weekId).eq('is_flagged', false),
+      supabase.from('payroll_time_entries').select('*').eq('payroll_week_id', weekId).eq('is_flagged', false).eq('is_active', true),
       supabase.from('payroll_adjustments').select('*').eq('payroll_week_id', weekId).eq('is_active', true),
       supabase.from('payroll_management_fee_config').select('*').order('effective_date', { ascending: false }),
       supabase.from('properties').select('id, code, name, total_units, portfolio_id, address, is_active').eq('is_active', true),
@@ -49,12 +50,21 @@ export function usePayrollWeekReview(weekId: string) {
     setProperties(propRes.data ?? [])
     setEmployeeRates(ratesRes.data ?? [])
     setApproved((approvalRes.data?.length ?? 0) > 0)
+    // Count pending entries that block approval
+    const pendingRes = await supabase
+      .from('payroll_time_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('payroll_week_id', weekId)
+      .eq('pending_resolution', true)
+      .eq('is_active', true)
+    setPendingCount(pendingRes.count ?? 0)
     setLoading(false)
   }, [weekId])
 
   useEffect(() => { load() }, [load])
 
   const approvePayroll = useCallback(async (result: PayrollCalculationResult) => {
+    if (pendingCount > 0) throw new Error(`${pendingCount} entries are still pending — resolve or discard before approving.`)
     setApproving(true)
     const supabase = createClient()
     const userId = (await supabase.auth.getUser()).data.user?.id
@@ -82,11 +92,11 @@ export function usePayrollWeekReview(weekId: string) {
     await supabase.from('payroll_weeks').update({ status: 'payroll_approved' }).eq('id', weekId)
     setApproved(true)
     setApproving(false)
-  }, [weekId])
+  }, [weekId, pendingCount])
 
   return {
     week, employees, entries, adjustments, feeConfigs, properties, employeeRates,
-    approved, loading, error, approving,
+    approved, pendingCount, loading, error, approving,
     approvePayroll, refetch: load,
   }
 }

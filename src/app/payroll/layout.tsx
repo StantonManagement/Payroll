@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   Users,
   Upload,
-  AlertCircle,
+  ClipboardEdit,
   DollarSign,
   BarChart2,
   TrendingUp,
@@ -18,6 +18,8 @@ import {
   Target,
   Briefcase,
   SplitSquareVertical,
+  Car,
+  Receipt,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/payroll/useAuth'
 
@@ -25,7 +27,8 @@ const navItems = [
   { href: '/payroll', label: 'Week Dashboard', icon: BarChart2, exact: true },
   { href: '/payroll/employees', label: 'Employees & Rates', icon: Users },
   { href: '/payroll/import', label: 'Workyard Import', icon: Upload },
-  { href: '/payroll/corrections', label: 'Correction Queue', icon: AlertCircle },
+  { href: '/payroll/timesheets', label: 'Timesheet Adjustments', icon: ClipboardEdit },
+  { href: '/payroll/expenses', label: 'Expenses', icon: Receipt },
   { href: '/payroll/adjustments', label: 'Adjustments', icon: DollarSign },
   { href: '/payroll/splits', label: 'Dept Splits', icon: SplitSquareVertical },
   { href: '/payroll/history', label: 'History', icon: History },
@@ -41,6 +44,7 @@ const adminItems = [
   { href: '/payroll/admin/portfolios', label: 'Portfolios', icon: Briefcase },
   { href: '/payroll/admin/users', label: 'Users & Roles', icon: Users },
   { href: '/payroll/admin/thresholds', label: 'Budget Thresholds', icon: Target },
+  { href: '/payroll/admin/travel-premiums', label: 'Travel Premiums', icon: Car },
 ]
 
 export default function PayrollLayout({ children }: { children: React.ReactNode }) {
@@ -152,7 +156,7 @@ export default function PayrollLayout({ children }: { children: React.ReactNode 
               </button>
             </div>
           )}
-          <p className="text-xs text-white/20">Phase 4 — Completions & Polish</p>
+          <p className="text-xs text-white/20">Phase 6 — Expense Reimbursements</p>
         </div>
       </aside>
 

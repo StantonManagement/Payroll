@@ -1,0 +1,25 @@
+# Plan Execution Rule
+
+**NEVER call `exitplanmode` or begin implementing without explicit user confirmation.**
+When a plan is ready, present it and WAIT. Only proceed when the user says something like "go", "looks good", "do it", or equivalent. Do not infer confirmation from the content of the request.
+
+---
+
+# Supabase MCP Connection
+
+This project uses Supabase. You have a Supabase MCP server available in this Windsurf instance.
+
+**Always use the MCP tools for database operations.** Do NOT:
+- Tell the user to paste SQL into the Supabase SQL Editor
+- Create throwaway API routes (e.g. `/api/setup-storage`) to run admin operations
+- Ask for a `SUPABASE_SERVICE_ROLE_KEY`
+- Say "the MCP server isn't available" without actually trying the tools first
+
+Instead, use these MCP tools directly:
+- `execute_sql` — run any SQL query
+- `apply_migration` — run DDL/schema changes
+- `list_tables` — inspect schema
+- `list_projects` — find the project ID
+- `get_project_url` / `get_publishable_keys` — get connection details
+
+To find this project's Supabase project ID, run `list_projects` and match by name.

@@ -41,11 +41,20 @@ export default function ImportPage() {
 
   const matchRows = useCallback((rows: WorkyardRow[]): MatchedRow[] => {
     const propByCode = Object.fromEntries(propertyList.map(p => [p.code?.toLowerCase(), p]))
-    const empByWorkyardId = Object.fromEntries(employees.map(e => [e.workyard_id?.toLowerCase() ?? '', e]))
+    const empByWorkyardId = Object.fromEntries(
+      employees.filter(e => e.workyard_id).map(e => [e.workyard_id!.toLowerCase(), e])
+    )
     const empByName = Object.fromEntries(employees.map(e => [e.name.toLowerCase(), e]))
+    const empByFirstName = Object.fromEntries(employees.map(e => [e.name.toLowerCase().split(' ')[0], e]))
 
     return rows.map(row => {
-      const emp = empByWorkyardId[row.workyardId?.toLowerCase()] ?? empByName[row.employeeName?.toLowerCase()]
+      const wyIdKey = row.workyardId?.toLowerCase()
+      const nameKey = row.employeeName?.toLowerCase()
+      const firstNameKey = row.employeeName?.toLowerCase().split(' ')[0]
+      const emp =
+        (wyIdKey ? empByWorkyardId[wyIdKey] : undefined) ??
+        (nameKey ? empByName[nameKey] : undefined) ??
+        (firstNameKey ? empByFirstName[firstNameKey] : undefined)
       const prop = propByCode[row.projectName?.toLowerCase()]
       const overhead = isOverheadProperty(row.projectName)
 
@@ -96,7 +105,7 @@ export default function ImportPage() {
     setApiStats(null)
 
     try {
-      const res = await fetch(`/api/workyard/timecards?weekStart=${selectedWeek.week_start}`)
+      const res = await fetch(`/api/workyard/timecards?weekStart=${selectedWeek.week_start}&approvedOnly=false`)
       const json = await res.json()
       if (!res.ok) {
         setParseErrors([json.error ?? 'Failed to fetch from Workyard'])

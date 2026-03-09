@@ -82,23 +82,23 @@ function SortableHeader({
     <th
       ref={setNodeRef}
       style={style}
-      className="relative bg-[var(--primary)] text-white text-left text-xs font-medium uppercase tracking-wider select-none group"
+      className="relative bg-[var(--surface-chrome)] text-[var(--ink)] text-left text-xs font-medium uppercase tracking-wider select-none group"
     >
       <div className="flex items-center gap-1 px-3 py-3">
         <span
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-white/40 hover:text-white/70 shrink-0"
+          className="cursor-grab active:cursor-grabbing text-[var(--muted)] hover:text-[var(--ink)] shrink-0"
         >
           <GripVertical size={12} />
         </span>
         <button
           onClick={() => column.sortable !== false && onSort(column.key)}
-          className={`flex items-center gap-1 flex-1 text-left ${column.sortable !== false ? 'hover:text-white/80' : 'cursor-default'}`}
+          className={`flex items-center gap-1 flex-1 text-left ${column.sortable !== false ? 'hover:text-[var(--ink)]/70' : 'cursor-default'}`}
         >
           <span className="truncate">{column.label}</span>
           {column.sortable !== false && (
-            <SortIcon size={11} className={isSorted ? 'text-[var(--accent-light)]' : 'text-white/40'} />
+            <SortIcon size={11} className={isSorted ? 'text-[var(--accent)]' : 'text-[var(--muted)]'} />
           )}
         </button>
       </div>
@@ -258,7 +258,7 @@ export default function DataTable<T extends Record<string, unknown>>({
               onClick={() => handleDensity(d)}
               className={`px-2.5 py-1 text-xs transition-colors ${
                 density === d
-                  ? 'bg-[var(--primary)] text-white'
+                  ? 'bg-[var(--ink)] text-white'
                   : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--divider)]'
               }`}
             >

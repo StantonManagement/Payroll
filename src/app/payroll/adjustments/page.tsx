@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<AdjustmentType, string> = {
   tool: 'Tool Purchase',
   advance: 'Advance',
   deduction_other: 'Other Deduction',
+  expense_reimbursement: 'Expense Reimbursement',
 }
 
 const TYPE_ALLOCATION: Record<AdjustmentType, AllocationMethod> = {
@@ -26,6 +27,7 @@ const TYPE_ALLOCATION: Record<AdjustmentType, AllocationMethod> = {
   tool: 'unit_weighted',
   advance: 'employee_pay',
   deduction_other: 'employee_pay',
+  expense_reimbursement: 'direct',
 }
 
 export default function AdjustmentsPage() {

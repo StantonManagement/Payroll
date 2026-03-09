@@ -109,23 +109,17 @@ async function fetchProjectMap(): Promise<Map<number, { sCode: string; customerN
   return map
 }
 
-/** Fetch all approved time cards for a date range, paginating automatically */
-async function fetchApprovedTimeCards(startUnix: number, endUnix: number): Promise<WYTimeCard[]> {
+/** Fetch time cards for a date range, paginating automatically */
+async function fetchApprovedTimeCards(startUnix: number, endUnix: number, approvedOnly: boolean): Promise<WYTimeCard[]> {
   const cards: WYTimeCard[] = []
   let page = 1
 
   while (true) {
-    const params = new URLSearchParams({
-      status: 'eq:approved',
-      start_dt_unix: `gte:${startUnix}`,
-      end_dt_unix: `lt:${endUnix}`,
-      include: 'cost_allocations,worker',
-      limit: '100',
-      page: String(page),
-    })
+    const statusFilter = approvedOnly ? '&status=eq:approved' : ''
+    const qs = `start_dt_unix=gte:${startUnix}&end_dt_unix=lt:${endUnix}${statusFilter}&include=cost_allocations,worker&limit=100&page=${page}`
 
     const data = await workyardFetch<WYListResponse<WYTimeCard>>(
-      `/orgs/${ORG_ID}/time_cards?${params}`
+      `/orgs/${ORG_ID}/time_cards?${qs}`
     )
     cards.push(...data.data)
     if (page >= data.meta.last_page) break
@@ -172,7 +166,8 @@ function unixToDate(unix: number): string {
  * allocation, with hours distributed proportionally by duration_secs.
  */
 export async function fetchWorkyardTimecards(
-  weekStart: string
+  weekStart: string,
+  approvedOnly = true
 ): Promise<{ rows: WorkyardRow[]; stats: { total: number; allocations: number } }> {
   const startUnix = orgMidnightUnix(weekStart)
   // Advance 7 days from noon UTC to stay in the right calendar day, then find midnight
@@ -182,7 +177,7 @@ export async function fetchWorkyardTimecards(
   const endUnix = orgMidnightUnix(endDateStr)
 
   const [cards, projectMap] = await Promise.all([
-    fetchApprovedTimeCards(startUnix, endUnix),
+    fetchApprovedTimeCards(startUnix, endUnix, approvedOnly),
     fetchProjectMap(),
   ])
 
@@ -242,30 +237,4 @@ export async function fetchWorkyardTimecards(
     rows,
     stats: { total: cards.length, allocations: rows.length },
   }
-}
-
-export interface WYEmployee {
-  employee_id: number
-  display_name: string
-  email: string
-  pay_type: string
-  pay_rate: number | null
-  status: string
-}
-
-/** Fetch all employees from Workyard */
-export async function fetchWorkyardEmployees(): Promise<WYEmployee[]> {
-  const employees: WYEmployee[] = []
-  let page = 1
-
-  while (true) {
-    const data = await workyardFetch<WYListResponse<WYEmployee>>(
-      `/orgs/${ORG_ID}/employees.v2?limit=100&page=${page}`
-    )
-    employees.push(...data.data)
-    if (page >= data.meta.last_page) break
-    page++
-  }
-
-  return employees
 }

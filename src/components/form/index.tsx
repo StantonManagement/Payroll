@@ -149,7 +149,7 @@ const statusColors: Record<string, string> = {
   corrections_complete: 'bg-[var(--primary)]/10 text-[var(--primary)]',
   payroll_approved: 'bg-[var(--success)]/10 text-[var(--success)]',
   invoiced: 'bg-[var(--accent)]/15 text-[var(--accent)]',
-  statement_sent: 'bg-[var(--primary)]/10 text-[var(--primary)]',
+  statement_sent: 'bg-[var(--success)]/10 text-[var(--success)]',
   approved: 'bg-[var(--success)]/10 text-[var(--success)]',
   sent: 'bg-[var(--primary)]/10 text-[var(--primary)]',
   active: 'bg-[var(--success)]/10 text-[var(--success)]',
@@ -179,7 +179,7 @@ export function PageHeader({
   actions?: React.ReactNode
 }) {
   return (
-    <div className="flex items-start justify-between px-6 py-5 border-b border-[var(--divider)] bg-white">
+    <div className="flex items-start justify-between px-6 py-5 border-b border-[var(--divider)] bg-[var(--bg-section)]">
       <div>
         <h1 className="font-serif text-2xl text-[var(--primary)]">{title}</h1>
         {subtitle && <p className="text-sm text-[var(--muted)] mt-0.5">{subtitle}</p>}
