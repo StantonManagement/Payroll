@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { Suspense, useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { AlertTriangle, Clock, Lock, CheckCircle2 } from 'lucide-react'
@@ -20,6 +20,14 @@ import { AdjustmentLog } from './components/AdjustmentLog'
 import type { PayrollEmployee, PayrollTimeEntry } from '@/lib/supabase/types'
 
 export default function TimesheetsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-[var(--muted)]">Loading timesheets…</div>}>
+      <TimesheetsPageContent />
+    </Suspense>
+  )
+}
+
+function TimesheetsPageContent() {
   const { weeks } = usePayrollWeeks()
   const searchParams = useSearchParams()
   const [selectedWeekId, setSelectedWeekId] = useState('')

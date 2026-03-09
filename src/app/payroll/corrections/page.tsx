@@ -1,9 +1,17 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function CorrectionsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-[var(--muted)] text-sm">Loading...</div>}>
+      <CorrectionsPageContent />
+    </Suspense>
+  )
+}
+
+function CorrectionsPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
 

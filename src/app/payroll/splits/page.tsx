@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { Suspense, useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Pencil, Trash2, CheckCircle2, AlertTriangle, Lock } from 'lucide-react'
 import { usePayrollWeeks } from '@/hooks/payroll/usePayrollWeeks'
@@ -27,6 +27,14 @@ function DefaultSplitsDisplay({ employeeId }: { employeeId: string }) {
 }
 
 export default function SplitsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-[var(--muted)]">Loading split overrides…</div>}>
+      <SplitsPageContent />
+    </Suspense>
+  )
+}
+
+function SplitsPageContent() {
   const { weeks } = usePayrollWeeks()
   const { employees } = usePayrollEmployees(false)
   const searchParams = useSearchParams()

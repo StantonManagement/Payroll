@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Plus, Trash2, Lock } from 'lucide-react'
 import { usePayrollWeeks } from '@/hooks/payroll/usePayrollWeeks'
@@ -31,6 +31,14 @@ const TYPE_ALLOCATION: Record<AdjustmentType, AllocationMethod> = {
 }
 
 export default function AdjustmentsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-[var(--muted)]">Loading adjustments…</div>}>
+      <AdjustmentsPageContent />
+    </Suspense>
+  )
+}
+
+function AdjustmentsPageContent() {
   const { weeks } = usePayrollWeeks()
   const searchParams = useSearchParams()
   const [selectedWeekId, setSelectedWeekId] = useState('')
