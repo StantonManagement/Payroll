@@ -20,7 +20,16 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const supabase = createClient()
+    let supabase
+    try {
+      supabase = createClient()
+    } catch (error) {
+      console.error('Supabase client initialization failed:', error)
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
+      return
+    }
 
     const loadProfile = async (u: User) => {
       const { data } = await supabase
@@ -51,6 +60,10 @@ export function useAuth() {
       setUser(u)
       if (u) loadProfile(u).finally(() => setLoading(false))
       else setLoading(false)
+    }).catch(() => {
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -64,8 +77,10 @@ export function useAuth() {
   }, [])
 
   const signOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+    } catch {}
     window.location.href = '/payroll/login'
   }
 
