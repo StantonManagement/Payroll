@@ -8,6 +8,7 @@ import { useProperties } from '@/hooks/payroll/useProperties'
 import { PageHeader, FormButton, FormSelect, FormField, InfoBlock } from '@/components/form'
 import { createClient } from '@/lib/supabase/client'
 import { parseWorkyardCSV, isOverheadProperty, type WorkyardRow } from '@/lib/payroll/csv-parser'
+import type { PayrollEmployee } from '@/lib/supabase/types'
 import { format } from 'date-fns'
 
 interface MatchedRow extends WorkyardRow {
@@ -19,9 +20,13 @@ interface MatchedRow extends WorkyardRow {
   status: 'ok' | 'flagged' | 'unmatched_employee' | 'unmatched_property'
 }
 
+function normalizeName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 export default function ImportPage() {
   const { weeks, refetch: refetchWeeks } = usePayrollWeeks()
-  const { employees } = usePayrollEmployees(false)
+  const { employees, refetch: refetchEmployees } = usePayrollEmployees(false)
   const { properties: propertyList } = useProperties(true)
 
   const [importMode, setImportMode] = useState<'api' | 'csv'>('api')
@@ -39,18 +44,18 @@ export default function ImportPage() {
 
   const selectedWeek = draftWeeks.find(w => w.id === selectedWeekId)
 
-  const matchRows = useCallback((rows: WorkyardRow[]): MatchedRow[] => {
+  const matchRows = useCallback((rows: WorkyardRow[], employeePool: PayrollEmployee[] = employees): MatchedRow[] => {
     const propByCode = Object.fromEntries(propertyList.map(p => [p.code?.toLowerCase(), p]))
     const empByWorkyardId = Object.fromEntries(
-      employees.filter(e => e.workyard_id).map(e => [e.workyard_id!.toLowerCase(), e])
+      employeePool.filter(e => e.workyard_id).map(e => [e.workyard_id!.toLowerCase(), e])
     )
-    const empByName = Object.fromEntries(employees.map(e => [e.name.toLowerCase(), e]))
-    const empByFirstName = Object.fromEntries(employees.map(e => [e.name.toLowerCase().split(' ')[0], e]))
+    const empByName = Object.fromEntries(employeePool.map(e => [normalizeName(e.name), e]))
+    const empByFirstName = Object.fromEntries(employeePool.map(e => [normalizeName(e.name).split(' ')[0], e]))
 
     return rows.map(row => {
       const wyIdKey = row.workyardId?.toLowerCase()
-      const nameKey = row.employeeName?.toLowerCase()
-      const firstNameKey = row.employeeName?.toLowerCase().split(' ')[0]
+      const nameKey = row.employeeName ? normalizeName(row.employeeName) : ''
+      const firstNameKey = nameKey.split(' ')[0]
       const emp =
         (wyIdKey ? empByWorkyardId[wyIdKey] : undefined) ??
         (nameKey ? empByName[nameKey] : undefined) ??
@@ -83,6 +88,74 @@ export default function ImportPage() {
       }
     })
   }, [employees, propertyList])
+
+  const syncEmployeesFromWorkyardRows = useCallback(async (rows: WorkyardRow[]): Promise<PayrollEmployee[]> => {
+    const supabase = createClient()
+    const byWorkyardId = new Map<string, PayrollEmployee>()
+    const byName = new Map<string, PayrollEmployee>()
+    const mergedEmployees = [...employees]
+
+    for (const emp of mergedEmployees) {
+      if (emp.workyard_id) byWorkyardId.set(emp.workyard_id.toLowerCase(), emp)
+      byName.set(normalizeName(emp.name), emp)
+    }
+
+    const workers = new Map<string, string>()
+    for (const row of rows) {
+      const wyId = row.workyardId?.trim()
+      const wyName = row.employeeName?.trim()
+      if (!wyId || !wyName) continue
+      if (!workers.has(wyId)) workers.set(wyId, wyName)
+    }
+
+    for (const [wyId, wyName] of workers.entries()) {
+      const wyIdKey = wyId.toLowerCase()
+      const nameKey = normalizeName(wyName)
+      const existingById = byWorkyardId.get(wyIdKey)
+      if (existingById) continue
+
+      const existingByName = byName.get(nameKey)
+      if (existingByName) {
+        const { error } = await supabase
+          .from('payroll_employees')
+          .update({ workyard_id: wyId })
+          .eq('id', existingByName.id)
+        if (error) throw new Error(error.message)
+        const updated = { ...existingByName, workyard_id: wyId }
+        byWorkyardId.set(wyIdKey, updated)
+        byName.set(nameKey, updated)
+        const idx = mergedEmployees.findIndex(e => e.id === updated.id)
+        if (idx >= 0) mergedEmployees[idx] = updated
+        continue
+      }
+
+      const { data: inserted, error } = await supabase
+        .from('payroll_employees')
+        .insert({
+          name: wyName,
+          workyard_id: wyId,
+          type: 'hourly',
+          is_active: true,
+          ot_allowed: false,
+          pay_tax: false,
+          wc: false,
+        })
+        .select('*')
+        .single()
+      if (error) throw new Error(error.message)
+      if (inserted) {
+        mergedEmployees.push(inserted)
+        byWorkyardId.set(wyIdKey, inserted)
+        byName.set(nameKey, inserted)
+      }
+    }
+
+    if (workers.size > 0) {
+      await refetchEmployees()
+    }
+
+    return mergedEmployees
+  }, [employees, refetchEmployees])
 
   const handleFile = useCallback(async (f: File) => {
     setFile(f)
@@ -117,13 +190,14 @@ export default function ImportPage() {
         setParseErrors([`No approved time cards found for week of ${selectedWeek.week_start}. Make sure cards are approved in Workyard first.`])
         return
       }
-      setPreview(matchRows(rows))
+      const mergedEmployees = await syncEmployeesFromWorkyardRows(rows)
+      setPreview(matchRows(rows, mergedEmployees))
     } catch (err) {
       setParseErrors([err instanceof Error ? err.message : 'Network error'])
     } finally {
       setApiFetching(false)
     }
-  }, [selectedWeek, matchRows])
+  }, [selectedWeek, matchRows, syncEmployeesFromWorkyardRows])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()

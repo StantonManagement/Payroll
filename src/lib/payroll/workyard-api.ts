@@ -5,6 +5,38 @@ const BASE_URL = 'https://api.workyard.com'
 const API_KEY = process.env.WORKYARD_API_KEY!
 const ORG_ID = process.env.WORKYARD_ORG_ID!
 
+type TimeCardFilterFormat = 'combined' | 'separate'
+
+interface WorkyardDebugContext {
+  endpoint: string
+  query: string
+  page?: number
+  startUnix?: number
+  endUnix?: number
+  approvedOnly?: boolean
+  filterFormat?: TimeCardFilterFormat
+}
+
+class WorkyardApiError extends Error {
+  status: number
+  bodyText: string
+  bodyJson: unknown
+  debug?: WorkyardDebugContext
+
+  constructor(status: number, bodyText: string, bodyJson: unknown, debug?: WorkyardDebugContext) {
+    super(`Workyard API ${status}: ${bodyText}`)
+    this.name = 'WorkyardApiError'
+    this.status = status
+    this.bodyText = bodyText
+    this.bodyJson = bodyJson
+    this.debug = debug
+  }
+}
+
+export function isWorkyardApiError(err: unknown): err is WorkyardApiError {
+  return err instanceof WorkyardApiError
+}
+
 function headers() {
   return {
     Authorization: `Bearer ${API_KEY}`,
@@ -12,11 +44,17 @@ function headers() {
   }
 }
 
-async function workyardFetch<T>(path: string): Promise<T> {
+async function workyardFetch<T>(path: string, debug?: WorkyardDebugContext): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { headers: headers(), cache: 'no-store' })
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`Workyard API ${res.status}: ${body}`)
+    let bodyJson: unknown = null
+    try {
+      bodyJson = JSON.parse(body)
+    } catch {
+      bodyJson = null
+    }
+    throw new WorkyardApiError(res.status, body, bodyJson, debug)
   }
   return res.json() as Promise<T>
 }
@@ -109,21 +147,86 @@ async function fetchProjectMap(): Promise<Map<number, { sCode: string; customerN
   return map
 }
 
+function assertUnixSeconds(unix: number, label: string) {
+  if (!Number.isInteger(unix) || unix < 1_000_000_000 || unix > 9_999_999_999) {
+    throw new Error(`Invalid ${label}: ${unix}. Expected 10-digit Unix seconds.`)
+  }
+}
+
+function buildTimeCardsQuery(
+  startUnix: number,
+  endUnix: number,
+  approvedOnly: boolean,
+  page: number,
+  format: TimeCardFilterFormat
+): string {
+  assertUnixSeconds(startUnix, 'startUnix')
+  assertUnixSeconds(endUnix, 'endUnix')
+
+  const params = new URLSearchParams()
+  // Workyard /time_cards expects both bounds in start_dt_unix: gte:<start>+lt:<end>
+  if (format === 'combined') {
+    params.set('start_dt_unix', `gte:${startUnix}+lt:${endUnix}`)
+  } else {
+    params.set('start_dt_unix', `gte:${startUnix}`)
+    params.set('end_dt_unix', `lt:${endUnix}`)
+  }
+  if (approvedOnly) params.set('status', 'eq:approved')
+  params.set('include', 'cost_allocations,worker')
+  params.set('limit', '100')
+  params.set('page', String(page))
+
+  return params.toString()
+}
+
+function hasStartUnixValidationError(err: unknown): boolean {
+  if (!isWorkyardApiError(err) || err.status !== 400 || !err.bodyJson || typeof err.bodyJson !== 'object') {
+    return false
+  }
+  const hints = (err.bodyJson as { field_hints?: { start_dt_unix?: unknown } }).field_hints
+  return Array.isArray(hints?.start_dt_unix) && hints.start_dt_unix.length > 0
+}
+
 /** Fetch time cards for a date range, paginating automatically */
 async function fetchApprovedTimeCards(startUnix: number, endUnix: number, approvedOnly: boolean): Promise<WYTimeCard[]> {
   const cards: WYTimeCard[] = []
   let page = 1
+  let filterFormat: TimeCardFilterFormat = 'combined'
 
   while (true) {
-    const statusFilter = approvedOnly ? '&status=eq:approved' : ''
-    const qs = `start_dt_unix=gte:${startUnix}&end_dt_unix=lt:${endUnix}${statusFilter}&include=cost_allocations,worker&limit=100&page=${page}`
+    const qs = buildTimeCardsQuery(startUnix, endUnix, approvedOnly, page, filterFormat)
+    const debugContext: WorkyardDebugContext = {
+      endpoint: `/orgs/${ORG_ID}/time_cards`,
+      query: qs,
+      page,
+      startUnix,
+      endUnix,
+      approvedOnly,
+      filterFormat,
+    }
 
-    const data = await workyardFetch<WYListResponse<WYTimeCard>>(
-      `/orgs/${ORG_ID}/time_cards?${qs}`
-    )
-    cards.push(...data.data)
-    if (page >= data.meta.last_page) break
-    page++
+    if (process.env.NODE_ENV !== 'production') {
+      console.info('[workyard] time_cards request', debugContext)
+    }
+
+    try {
+      const data = await workyardFetch<WYListResponse<WYTimeCard>>(
+        `/orgs/${ORG_ID}/time_cards?${qs}`,
+        debugContext
+      )
+      cards.push(...data.data)
+      if (page >= data.meta.last_page) break
+      page++
+    } catch (err) {
+      if (filterFormat === 'combined' && hasStartUnixValidationError(err)) {
+        filterFormat = 'separate'
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('[workyard] retrying time_cards with separate start/end filters')
+        }
+        continue
+      }
+      throw err
+    }
   }
 
   return cards

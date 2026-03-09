@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchWorkyardTimecards } from '@/lib/payroll/workyard-api'
+import { fetchWorkyardTimecards, isWorkyardApiError } from '@/lib/payroll/workyard-api'
 
 export async function GET(req: NextRequest) {
   const weekStart = req.nextUrl.searchParams.get('weekStart')
@@ -18,6 +18,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 502 })
+    const debug =
+      process.env.NODE_ENV !== 'production' && isWorkyardApiError(err)
+        ? {
+            status: err.status,
+            endpoint: err.debug?.endpoint,
+            query: err.debug?.query,
+            page: err.debug?.page,
+            startUnix: err.debug?.startUnix,
+            endUnix: err.debug?.endUnix,
+            filterFormat: err.debug?.filterFormat,
+            body: err.bodyJson ?? err.bodyText,
+          }
+        : undefined
+
+    return NextResponse.json({ error: message, debug }, { status: 502 })
   }
 }

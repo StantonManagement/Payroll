@@ -29,7 +29,7 @@ export async function GET() {
     let page = 1
 
     while (true) {
-      const qs = `status=eq:active&limit=100&page=${page}&sort_by=asc:employee_display_name`
+      const qs = `limit=100&page=${page}&sort_by=asc:employee_display_name`
 
       const res = await fetch(`${BASE_URL}/orgs/${ORG_ID}/employees.v2?${qs}`, {
         headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
