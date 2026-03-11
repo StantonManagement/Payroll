@@ -12,13 +12,13 @@ export function getSupabaseConfig() {
     FALLBACK_SUPABASE_URL
   )
 
-  // Incident fallback order: prefer modern publishable keys first, then known-good fallback.
-  // This avoids production lockouts when legacy SUPABASE_KEY has been rotated/revoked.
+  // Incident fallback order: prefer modern publishable keys and known-good fallback first.
+  // This avoids production lockouts when legacy anon keys in env have been rotated/revoked.
   const supabaseAnonKey = firstNonEmpty(
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     process.env.SUPABASE_PUBLISHABLE_KEY,
     FALLBACK_SUPABASE_PUBLISHABLE_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     process.env.SUPABASE_KEY
   )
 
