@@ -1,45 +1,171 @@
-## Significant Features
-Ordered by priority within each tier.
+# Payroll & Invoicing System
+Replaces Stanton Management's spreadsheet-driven weekly payroll and property billing with an auditable, approval-gated system that preserves history, surfaces management fees as explicit line items, and scales across portfolios without manual rebuilds.
 
-### P1 — Critical
-- End-to-end Weekly Payroll Run (Import -> Corrections -> Allocation -> Invoices -> Statement -> ADP): replaces Excel as the operational system of record for weekly payroll and billing.
-  Status: partial
-- Approval Gates + Immutable Weekly Locking: enforces sequential approvals with audit trails and prevents silent post-approval edits.
-  Status: planned
-- Timesheet Adjustment Workbench (Reassign/Add/Spread/Remove + Pending): captures manager dispatch knowledge quickly so unallocated hours are resolved before payroll close.
-  Status: partial
-- Cost Allocation Engine + Explicit Management Fee Line Items: makes labor/spread/fee calculations auditable and legally billable per owner entity.
-  Status: planned
+## Features
 
-### P2 — High
-- Expense & Reimbursement Submission (receipt-required, mobile-first, routed approvals): ensures all reimbursable and company-paid spend is captured with evidence and routed correctly.
-  Status: planned
-- ADP Export + Inbound Reconciliation: closes the payroll loop by detecting and tracking variance between system totals and ADP actuals.
-  Status: planned
-- Employee/Rate/Department Split Management with Effective Dating: preserves compensation history and supports salaried split defaults plus audited overrides.
-  Status: partial
-- Consolidated Statement Generator: turns approved invoices into transfer-ready weekly statement with release checks.
-  Status: planned
+### Workyard Time Card Ingestion
+- **Status:** partial
+- **Description:** Pulls approved time cards from the Workyard API with CSV fallback, performs S-code matching, and routes flagged entries to the correction queue.
+- **Blockers:** Reliability depends on fallback/manual correction workflows; full API-first ingestion not yet stable.
+- **Dependencies:** none
+- **Unlocks:** Timesheet Adjustment Workbench, Cost Allocation Engine, end-to-end payroll run
+- **Effort:** medium
+- **Priority:** P1
 
-### P3 — Backlog
-- Cost-Per-Unit Intelligence Layer (history, trends, alerts): unlocks per-property and portfolio cost trend visibility after enough historical weeks exist.
-  Status: planned
-- Workyard Reliability Tracking: surfaces employee-level dependency on manual entry vs Workyard to focus operational coaching.
-  Status: planned
-- Future Mileage + SMS Confirmation Paths (schema-ready placeholders): keeps future operational automation additive without schema rework.
-  Status: planned
-- Portfolio Expansion Onboarding Flows: enables adding new portfolios/external projects through admin configuration rather than dev work.
-  Status: planned
+### Timesheet Adjustment Workbench
+- **Status:** partial
+- **Description:** Week-grid-first interface for reassign/add/spread/remove operations with pending state handling, carry-forward for locked prior weeks, and a throughput target of <30 seconds per unallocated block.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Cost Allocation Engine, Approval Gates
+- **Effort:** large
+- **Priority:** P1
 
-## Known Blockers
-- Budget threshold alerts and target values -> blocked by management input on threshold amounts.
-- Multi-portfolio security posture -> blocked by tightening RLS beyond current permissive authenticated policies.
-- Full Workyard API-first ingestion reliability -> blocked by current dependency on fallback/manual correction workflows.
-- Cost-per-unit trend usefulness -> blocked by insufficient approved historical week volume.
+### Employee / Rate / Department Split Management
+- **Status:** partial
+- **Description:** Master employee records with effective-dated rates, compensation flags, and salaried department split defaults with audited overrides.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Cost Allocation Engine, ADP Export
+- **Effort:** medium
+- **Priority:** P2
+
+### Cost Allocation Engine
+- **Status:** planned
+- **Description:** Direct labor, unit-weighted portfolio spread, and explicit management fee calculation per billing entity — replicates and replaces the 1,359-row Excel Summary sheet.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Invoice Generator, Statement Generator, Pre-Fund Cash Estimate
+- **Effort:** large
+- **Priority:** P1
+
+### Approval Gates + Immutable Weekly Locking
+- **Status:** planned
+- **Description:** Enforced sequential approval chain (timesheet → payroll → invoices → statement → ADP export) with audit trail and post-approval lock preventing silent edits.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** History Store, full end-to-end payroll run
+- **Effort:** large
+- **Priority:** P1
+
+### Invoice Generator
+- **Status:** planned
+- **Description:** Per-LLC invoice generation with explicit management fee line items — Park Portfolio sub-LLCs get individual invoices.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Statement Generator
+- **Effort:** medium
+- **Priority:** P1
+
+### Statement Generator
+- **Status:** planned
+- **Description:** Consolidated weekly statement rolling up all LLC invoices with error-check logic and release gates.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** ADP Export, bank transfer readiness
+- **Effort:** medium
+- **Priority:** P2
+
+### ADP Export + Inbound Reconciliation
+- **Status:** planned
+- **Description:** Outbound gross pay summary for Kathleen to submit to ADP, plus inbound ADP report upload with automatic variance detection and tracking.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Full payroll loop closure, variance auditing
+- **Effort:** medium
+- **Priority:** P2
+
+### Expense & Reimbursement Submission
+- **Status:** planned
+- **Description:** Receipt-required, mobile-first expense submission with two paths (employee self-submit and in-office proxy), payment method routing, batch submission with signature attestation, and gas auto-allocation by property visit pattern.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Complete reimbursement tracking, Kathleen bookkeeping queue
+- **Effort:** large
+- **Priority:** P2
+
+### Management Fee Configuration
+- **Status:** planned
+- **Description:** Per-portfolio configurable management fee rates with effective dating, visible in admin UI.
+- **Blockers:** Rate values for existing portfolios need management input at setup time.
+- **Dependencies:** none
+- **Unlocks:** Invoice Generator explicit fee line items
+- **Effort:** small
+- **Priority:** P1
+
+### History Store + Excel Export
+- **Status:** planned
+- **Description:** Immutable approved-week records that are queryable and exportable as Excel for downstream workflows.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Cost-Per-Unit Intelligence Layer, historical payroll queries
+- **Effort:** medium
+- **Priority:** P1
+
+### Cost-Per-Unit Intelligence Layer
+- **Status:** planned
+- **Description:** Per-property and portfolio cost trend dashboard with rolling averages, comparisons, sparklines, and budget-threshold alerts.
+- **Blockers:** Insufficient approved historical week volume; budget threshold amounts pending management input.
+- **Dependencies:** none
+- **Unlocks:** Proactive cost management, portfolio performance visibility
+- **Effort:** large
+- **Priority:** P3
+
+### Workyard Reliability Tracking
+- **Status:** planned
+- **Description:** Surfaces employee-level dependency on manual entry vs Workyard to focus operational coaching.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Operational coaching insights, import quality improvement
+- **Effort:** small
+- **Priority:** P3
+
+### Portfolio Expansion Onboarding
+- **Status:** planned
+- **Description:** Admin-driven flows for adding new portfolios, external projects, and divergent invoice structures without dev work.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Business scalability without engineering bottleneck
+- **Effort:** medium
+- **Priority:** P3
+
+### Mileage + SMS Confirmation Paths
+- **Status:** planned
+- **Description:** Schema-ready placeholders for future mileage reimbursement (via Workyard mileage data) and SMS employee hour confirmation.
+- **Blockers:** none
+- **Dependencies:** none
+- **Unlocks:** Future automation without schema rework
+- **Effort:** small
+- **Priority:** P3
+
+## Recent Changes
+- Prioritize publishable Supabase keys over legacy revoked keys
+- Recover login when legacy Supabase API key is revoked
+- Harden Supabase auth env handling and upgrade ESLint
+- Consolidate planning into PLAN.md as single operational source of truth
+- Harden Supabase client auth init for missing Vercel env vars
+- Harden payroll middleware against env/auth edge failures
+- Fix payroll prerender by wrapping useSearchParams pages in Suspense
+- Add admin property creation flow with owner and unit fields
+- Fix Workyard timecards API filter format; enable Turbopack
+- Implement workflow audit fixes: navigation, ADP export, dept splits, locks, history, per-week context links
+
+## Known Debt
+- RLS policies are permissive `USING (true)` for authenticated users — must be tightened to portfolio-level filtering before multi-portfolio deployment.
+- Workyard ingestion still depends on fallback/manual correction rather than reliable API-first path.
+- No immutable locking or approval enforcement yet — data can be silently edited post-review.
+- Budget threshold alerts require management-provided values that have not been supplied.
+- Legacy docs (PAYROLL_PRD.md, TIMESHEET_ADJUSTMENT_PRD.md, etc.) still exist alongside consolidated PLAN.md — candidates for cleanup.
+
+## Next Milestone
+Complete Phase 1 — run one full weekly payroll and billing cycle end-to-end with zero Excel dependency.
+
+## Triage Flags
+- **RLS posture:** Current permissive policies are a known gap; must be resolved before any multi-portfolio rollout.
+- **Cost allocation engine:** Not yet built — this is the most complex module and blocks invoice/statement generation.
+- **Approval gates:** No enforcement exists yet; managers can edit data at any stage without audit trail.
 
 ---
-
-# Payroll & Invoicing Consolidated Plan
 
 ## Source Consolidation
 This file consolidates planning content formerly maintained in:
@@ -49,9 +175,6 @@ This file consolidates planning content formerly maintained in:
 - EXPENSE_REIMBURSEMENT_PRD.md
 - DATABASE_ARCHITECTURE.md
 - ADVANCED_DATA_TABLE_SPECIFICATION.md
-
-## Product Scope and Outcome
-Stanton Management runs weekly payroll and property billing across multiple portfolios/LLCs. The product objective is to replace spreadsheet-driven payroll with an auditable, role-aware, approval-gated system that preserves history, exposes management fees explicitly, and supports expansion without recurring spreadsheet rebuilds.
 
 ## Core Operating Modules (Consolidated)
 1. Workyard ingestion (approved cards only) plus CSV fallback, including S-code matching and flagged-entry routing.
